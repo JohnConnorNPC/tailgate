@@ -756,6 +756,7 @@ func (g *gateway) handler(controlURL string, sc *stateCopy) http.Handler {
 		}
 		writeJSON(w, code, h)
 	})
+	mux.HandleFunc("GET /ping", g.ping)
 	mux.HandleFunc("GET /status", func(w http.ResponseWriter, r *http.Request) {
 		st, err := g.lc.Status(r.Context())
 		if err != nil {

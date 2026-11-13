@@ -35,6 +35,7 @@ client (talks to the daemon's API: default 127.0.0.1:7070; -api or $TAILGATE_API
   tailgate rm ID...                      remove mappings
   tailgate persist ID [on|off]           toggle whether a mapping is persistent
   tailgate status                        tailnet status and peers
+  tailgate ping [-c N] [-tsmp] HOST      ping a peer; shows whether the path is direct or relayed
   tailgate health                        one-line up/down; exit status 0 when up
   tailgate ssh [ssh opts] [user@]host[:port] [command]
                                          one-off ssh through the daemon (system ssh + ProxyCommand; no port mapped)
@@ -91,6 +92,8 @@ func main() {
 		err = cmdSSH(args)
 	case "nc":
 		err = cmdNC(args)
+	case "ping":
+		err = cmdPing(args)
 	case "-h", "--help", "help":
 		io.WriteString(os.Stdout, usage)
 	default:

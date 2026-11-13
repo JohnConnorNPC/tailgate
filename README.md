@@ -119,6 +119,12 @@ backup.tailnet.internal  100.64.0.9  linux  yes     tag:backup
 nas.tailnet.internal     100.64.0.8  linux  yes     tag:server
 ```
 
+```console
+$ tailgate ping nas
+pong from nas (100.64.0.8) via DERP(syd) in 31ms
+pong from nas (100.64.0.8) via direct 203.0.113.7:41641 in 9ms
+```
+
 **3. Keep it running:**
 
 ```sh
@@ -252,6 +258,7 @@ TAILGATE_ARGS=-socks 127.0.0.1:1056 -expose 22
 | `tailgate rm ID...` | Remove mappings |
 | `tailgate persist ID [on\|off]` | Make an existing mapping persistent, or not |
 | `tailgate status` | This node and the peers it can see |
+| `tailgate ping [-c N] [-tsmp] HOST` | Ping a peer and show whether the path is direct or relayed |
 | `tailgate health` | One line, exit status 0 when up |
 | `tailgate ssh [ssh opts] [user@]host[:port] [cmd]` | One-off SSH through the tailnet |
 | `tailgate nc HOST PORT` | Raw tunnel on stdin/stdout |
@@ -302,6 +309,7 @@ Plain JSON over HTTP, on whatever `-api` points at. The CLI is a thin client for
 ```text
 GET     /health          up or down, tailnet addresses; 503 when down
 GET     /status          this node and its peers
+GET     /ping?host=nas   one ping: latency and path (add &type=tsmp for a full-tunnel ping)
 GET     /mappings
 POST    /mappings        {"dir":"out","listen":"8022","target":"nas:22","persistent":true}
 POST    /mappings        {"dir":"in","listen":"22","target":"127.0.0.1:22","allow":"tag:backup"}
