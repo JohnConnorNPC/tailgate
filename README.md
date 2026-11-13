@@ -4,7 +4,7 @@
 
 ### A whole tailnet node in a single binary
 
-Join a [headscale](https://github.com/juanfont/headscale) network from userspace and map ports in both directions.<br>
+Join a [headscale](https://github.com/juanfont/headscale)/[tailscale](https://tailscale.com) network from userspace and map ports in both directions.<br>
 No root, no TUN device, and as many tailnets side by side as you like.
 
 ![Go](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white)
