@@ -1,0 +1,12 @@
+[Unit]
+Description=tailgate - map local ports onto the headscale tailnet (userspace tsnet node)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/tailgate serve
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

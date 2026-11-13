@@ -1,0 +1,4 @@
+authkey
+tailgate
+*.db*
+hsgate
