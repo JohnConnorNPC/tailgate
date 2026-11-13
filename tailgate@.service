@@ -1,0 +1,18 @@
+# One service per profile: systemctl --user enable --now tailgate@work
+# Optional settings in ~/.config/tailgate/work.env:
+#   TAILGATE_CONTROL=https://headscale.example.com   (first run only)
+#   TS_AUTHKEY=...                                   (first run only)
+#   TAILGATE_ARGS=-socks 127.0.0.1:1056 -expose 22
+[Unit]
+Description=tailgate (%i) - userspace tailnet node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=-%h/.config/tailgate/%i.env
+ExecStart=%h/.local/bin/tailgate -n %i serve $TAILGATE_ARGS
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

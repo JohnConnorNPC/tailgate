@@ -826,14 +826,6 @@ func listenAPI(addr string, mode os.FileMode) (net.Listener, error) {
 	return ln, nil
 }
 
-func defaultDir() string {
-	if d := os.Getenv("XDG_DATA_HOME"); d != "" {
-		return filepath.Join(d, "tailgate")
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".local", "share", "tailgate")
-}
-
 func cmdServe(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	controlURL := fs.String("control", os.Getenv("TAILGATE_CONTROL"), "headscale server URL (needed on first run; remembered in the database afterwards)")
@@ -842,7 +834,7 @@ func cmdServe(args []string) error {
 	keyFile := fs.String("authkey-file", "", "file holding a headscale pre-auth key (only needed for first login; $TS_AUTHKEY also works)")
 	apiAddr := fs.String("api", apiDefault(), `control API: HOST:PORT, a unix socket (/path or unix:path), or "" to disable`)
 	apiMode := fs.String("api-mode", "0600", "file mode of a unix-socket API")
-	socksAddr := fs.String("socks", "127.0.0.1:1055", `SOCKS5 proxy into the tailnet ("" to disable)`)
+	socksAddr := fs.String("socks", socksDefault(), `SOCKS5 proxy into the tailnet, e.g. 127.0.0.1:1055 ("" to disable; off by default for named profiles)`)
 	var exposes []createReq
 	fs.Func("expose", "expose `PORT[=HOST:PORT][@ALLOW,...]` on the tailnet (repeatable), e.g. 22=127.0.0.1:22 or 443=127.0.0.1:443@tag:pbs", func(s string) error {
 		r, err := parseExpose(s)
@@ -1003,6 +995,24 @@ func cmdServe(args []string) error {
 		}
 	}
 
+	// Serve the API from the start: until the node is up it answers /health
+	// (down) and refuses the rest, instead of leaving clients hanging.
+	var ready atomic.Pointer[http.Handler]
+	if apiLn != nil {
+		api = &http.Server{ReadHeaderTimeout: 10 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if h := ready.Load(); h != nil {
+				(*h).ServeHTTP(w, r)
+				return
+			}
+			if r.Method == http.MethodGet && r.URL.Path == "/health" {
+				writeJSON(w, 503, healthOf(r.Context(), lc, sc))
+				return
+			}
+			writeErr(w, 503, errors.New("not connected to the tailnet yet (see `tailgate health`)"))
+		})}
+		go api.Serve(apiLn)
+	}
+
 	log.Printf("connecting to %s as %q ...", *controlURL, *hostname)
 	st, err := ts.Up(ctx)
 	if err != nil {
@@ -1033,8 +1043,8 @@ func cmdServe(args []string) error {
 	}
 
 	if apiLn != nil {
-		api = &http.Server{Handler: g.handler(*controlURL, sc), ReadHeaderTimeout: 10 * time.Second}
-		go api.Serve(apiLn)
+		h := g.handler(*controlURL, sc)
+		ready.Store(&h)
 		log.Printf("control API on %s", apiLn.Addr())
 	} else {
 		log.Printf("control API disabled")

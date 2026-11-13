@@ -16,5 +16,6 @@ tags .buildtags:
 install: tailgate
 	install -Dm755 tailgate $(HOME)/.local/bin/tailgate
 	install -Dm644 tailgate.service $(HOME)/.config/systemd/user/tailgate.service
+	install -Dm644 tailgate@.service $(HOME)/.config/systemd/user/tailgate@.service
 
 .PHONY: tags install

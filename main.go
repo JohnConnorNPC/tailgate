@@ -41,6 +41,10 @@ client (talks to the daemon's API: default 127.0.0.1:7070; -api or $TAILGATE_API
   tailgate nc HOST PORT                  stdin/stdout <-> tailnet HOST:PORT (e.g. ProxyCommand='tailgate nc %h %p')
 
   -p = persistent (kept in the database and restored on every start)
+
+profiles (several tailnets side by side; each has its own data dir and API socket):
+  tailgate -n NAME <command>             use profile NAME (or $TAILGATE_PROFILE), e.g. tailgate -n work serve ...
+  tailgate profiles                      list profiles on this machine
 `
 
 func envOr(k, def string) string {
@@ -50,16 +54,23 @@ func envOr(k, def string) string {
 	return def
 }
 
-func apiDefault() string { return envOr("TAILGATE_API", "127.0.0.1:7070") }
-
 func main() {
 	if len(os.Args) < 2 {
 		io.WriteString(os.Stderr, usage)
 		os.Exit(2)
 	}
-	cmd, args := os.Args[1], os.Args[2:]
-	var err error
+	rest, err := takeProfile(os.Args[1:])
+	if err == nil && len(rest) == 0 {
+		err = fmt.Errorf("missing command (try: tailgate help)")
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "tailgate:", err)
+		os.Exit(2)
+	}
+	cmd, args := rest[0], rest[1:]
 	switch cmd {
+	case "profiles":
+		err = cmdProfiles()
 	case "serve":
 		err = cmdServe(args)
 	case "map", "add":

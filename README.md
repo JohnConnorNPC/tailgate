@@ -2,10 +2,10 @@
 
 # 🚪 tailgate
 
-### A second tailnet in a single binary
+### A whole tailnet node in a single binary
 
-Join a [headscale](https://github.com/juanfont/headscale) network from userspace and map ports in both directions,<br>
-without touching the Tailscale you already have installed.
+Join a [headscale](https://github.com/juanfont/headscale) network from userspace and map ports in both directions.<br>
+No root, no TUN device, and as many tailnets side by side as you like.
 
 ![Go](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white)
 ![tsnet](https://img.shields.io/badge/built%20on-tsnet%201.104-242424?logo=tailscale&logoColor=white)
@@ -17,6 +17,7 @@ without touching the Tailscale you already have installed.
 [Going out](#going-out-local--tailnet) ·
 [Coming in](#coming-in-tailnet--local) ·
 [Reference](#command-reference) ·
+[Multiple tailnets](#multiple-tailnets) ·
 [RAM mode](#ram-mode-live-state-in-memory-copy-on-disk) ·
 [Troubleshooting](#troubleshooting)
 
@@ -24,12 +25,16 @@ without touching the Tailscale you already have installed.
 
 ---
 
-Your machine is already on one tailnet. You need to reach another one, and you don't
-want to log out, switch profiles, or boot a VM to do it.
-
 **tailgate is a complete Tailscale node that lives inside one process.** No TUN device,
-no routes, no firewall rules, no root. It gets its own identity on the headscale
-network and hands you plain TCP ports on either side.
+no routes, no firewall rules, no root. It gets its own identity on the tailnet and
+hands you plain TCP ports on either side.
+
+Use it as:
+
+- **The only node on a box** where you can't or won't install Tailscale: a NAS with a
+  read-only root, a container, a locked-down server, an account without sudo.
+- **An extra tailnet** next to the Tailscale you already run. Reach a second network, or a
+  third, without logging out, switching profiles, or booting a VM.
 
 ```console
 $ tailgate serve -control https://headscale.example.com -authkey-file ./authkey &
@@ -65,6 +70,7 @@ flowchart LR
 | 🔑 **One-off SSH** | `tailgate ssh root@host` runs your real `ssh` through the tailnet. Your keys, your config, real `known_hosts` entries |
 | 🧾 **Caller log** | Every inbound connection is logged with the peer's node name and tags, because the local service only ever sees `127.0.0.1` |
 | 💾 **One SQLite file** | Node keys, server address and mappings in a single `0600` database. Each mapping is persistent or throwaway, your choice |
+| 🗂️ **Profiles** | `tailgate -n work …` runs several tailnets side by side, each with its own identity |
 | 🧠 **RAM mode** | Keep the live database on tmpfs with a crash-safe copy on a disk that is allowed to disappear |
 | 🔒 **Locked-down API** | Control API on localhost TCP, on a Unix socket with file permissions, or switched off |
 | 🩺 **Health** | `/health`, `tailgate health` and a status file for dashboards and monitoring |
@@ -78,7 +84,7 @@ flowchart LR
 | Switch Tailscale profiles | One tailnet at a time. You drop off the first to reach the second |
 | A second `tailscaled` | Needs root, a second TUN device, and care with routes and DNS |
 | A VM or container | A whole OS to feed and patch, for the sake of a few ports |
-| **tailgate** | One unprivileged process. Both tailnets up at once |
+| **tailgate** | One unprivileged process per tailnet. All of them up at once |
 
 ## Quick start
 
@@ -87,7 +93,7 @@ flowchart LR
 ```sh
 git clone https://github.com/JohnConnorNPC/tailgate && cd tailgate
 make                      # builds ./tailgate
-make install              # ~/.local/bin/tailgate + a systemd user unit
+make install              # ~/.local/bin/tailgate + systemd user units
 ```
 
 **1. Join the tailnet.** The first run needs the server and a key:
@@ -197,6 +203,44 @@ ID  DIR  LISTEN          TARGET          ALLOW                 PERSIST  ACTIVE  
 10  out  127.0.0.1:8443  nas:443         -                     yes      0       2      0
 ```
 
+## Multiple tailnets
+
+Give each tailnet a profile name. A profile has its own data dir, its own identity and its
+own API socket, all derived from the name, so there are no ports to remember.
+
+```sh
+tailgate -n work serve -control https://headscale.work.example -authkey-file ./work.key
+tailgate -n home serve -control https://headscale.home.example -authkey-file ./home.key
+```
+
+```console
+$ tailgate -n work ssh root@build-box
+$ tailgate -n home map -p 8443 nas:443
+$ tailgate profiles
+PROFILE    RUNNING  DIR
+(default)  yes      ~/.local/share/tailgate
+home       yes      ~/.local/share/tailgate-home
+work       yes      ~/.local/share/tailgate-work
+```
+
+`-n` goes before the command. `export TAILGATE_PROFILE=work` does the same for a whole shell.
+Without either you get the default profile, which is the only one with TCP defaults
+(`127.0.0.1:7070` for the API, `127.0.0.1:1055` for SOCKS). Named profiles use a Unix socket
+for the API and have SOCKS off until you pick a port with `-socks`.
+
+As services, one per profile:
+
+```sh
+systemctl --user enable --now tailgate@work
+```
+
+```sh
+# ~/.config/tailgate/work.env (optional)
+TAILGATE_CONTROL=https://headscale.work.example    # first run only
+TS_AUTHKEY=...                                     # first run only
+TAILGATE_ARGS=-socks 127.0.0.1:1056 -expose 22
+```
+
 ## Command reference
 
 | Command | What it does |
@@ -211,6 +255,8 @@ ID  DIR  LISTEN          TARGET          ALLOW                 PERSIST  ACTIVE  
 | `tailgate health` | One line, exit status 0 when up |
 | `tailgate ssh [ssh opts] [user@]host[:port] [cmd]` | One-off SSH through the tailnet |
 | `tailgate nc HOST PORT` | Raw tunnel on stdin/stdout |
+| `tailgate profiles` | List the profiles on this machine |
+| `tailgate -n NAME <command>` | Run any command against profile `NAME` |
 
 <details>
 <summary><b><code>serve</code> flags</b></summary>
@@ -221,10 +267,10 @@ ID  DIR  LISTEN          TARGET          ALLOW                 PERSIST  ACTIVE  
 | `-control URL` | `$TAILGATE_CONTROL` | Your headscale server. Needed on the first run, remembered afterwards |
 | `-hostname NAME` | `$TAILGATE_HOSTNAME`, else `tailgate` | Node name on the tailnet |
 | `-authkey-file F` | | Pre-auth key for the first login. `$TS_AUTHKEY` also works |
-| `-dir DIR` | `~/.local/share/tailgate` | Live database and lock. May be tmpfs with `-state-copy` |
-| `-api ADDR` | `127.0.0.1:7070` | `HOST:PORT`, a Unix socket (`/path` or `unix:path`), or `""` to disable |
+| `-dir DIR` | `~/.local/share/tailgate[-NAME]` | Live database and lock. May be tmpfs with `-state-copy` |
+| `-api ADDR` | `127.0.0.1:7070`, or a socket for named profiles | `HOST:PORT`, a Unix socket (`/path` or `unix:path`), or `""` to disable |
 | `-api-mode MODE` | `0600` | File mode of a Unix-socket API |
-| `-socks ADDR` | `127.0.0.1:1055` | SOCKS5 proxy, `""` to disable |
+| `-socks ADDR` | `127.0.0.1:1055`, or off for named profiles | SOCKS5 proxy, `""` to disable |
 | `-expose SPEC` | | Expose a port on the tailnet, repeatable |
 | `-state-copy PATH` | | Keep a consistent copy of the database here |
 | `-state-copy-wait DUR` | `0` | At start, wait this long for the copy's folder to appear |
@@ -244,7 +290,8 @@ The client commands find the daemon through `-api` or `$TAILGATE_API`, using the
 |---|---|
 | `<dir>/tailgate.db` | Everything: node keys, server address, mappings. Mode `0600`. Back this up and you have the node |
 | `<dir>/lock` | Stops two daemons sharing one identity |
-| `~/.config/systemd/user/tailgate.service` | Installed by `make install` |
+| `$XDG_RUNTIME_DIR/tailgate-NAME.sock` | API socket of a named profile (`<dir>/api.sock` without a runtime dir) |
+| `~/.config/systemd/user/tailgate.service`, `tailgate@.service` | Installed by `make install` |
 
 </details>
 
@@ -376,7 +423,7 @@ A fresh data dir doesn't know which server to join. Pass `-control https://…` 
 - **TCP only** for mappings and exposes.
 - **No subnet routers or exit nodes.** tailgate reaches tailnet nodes directly, nothing behind them.
 - **Linux.** The Makefile targets `linux/amd64`; other Unix targets may build with plain `go build` but are untested.
-- **One identity per data dir.** Run a second tailgate with its own `-dir`, `-api` and `-socks` for a second tailnet.
+- **One identity per profile.** A second tailnet means a second daemon: see [Multiple tailnets](#multiple-tailnets).
 
 ## How it works
 
